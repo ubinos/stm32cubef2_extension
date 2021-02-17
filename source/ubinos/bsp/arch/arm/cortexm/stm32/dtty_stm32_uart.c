@@ -83,6 +83,8 @@ static void dtty_stm32_uart_reset(void)
         stm_err = HAL_UART_Init(&DTTY_STM32_UART_HANDLE);
         assert(stm_err == HAL_OK);
 
+        HAL_NVIC_SetPriority(DTTY_STM32_UART_IRQn, NVIC_PRIO_MIDDLE, 0);
+
         _g_dtty_uart_reset_count++;
     }
 
