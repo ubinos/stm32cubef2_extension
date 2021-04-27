@@ -424,7 +424,7 @@ int dtty_flush(void)
                 dtty_stm32_uart_reset();
             }
 
-            if (_g_dtty_uart_need_tx_restart)
+            if (_g_dtty_uart_need_tx_restart && cbuf_get_len(_g_dtty_uart_wbuf) > 0)
             {
                 len = 1;
 
@@ -439,10 +439,10 @@ int dtty_flush(void)
 
             if (cbuf_get_len(_g_dtty_uart_wbuf) == 0)
             {
-                sem_give(_g_dtty_uart_wsem);
                 r = 0;
                 break;
             }
+
             sem_take_timedms(_g_dtty_uart_wsem, DTTY_UART_CHECK_INTERVAL_MS);
         }
         mutex_unlock(_g_dtty_uart_putlock);
