@@ -5,6 +5,7 @@
  */
 
 #include <ubinos.h>
+#include <ubinos/bsp/arch.h>
 
 #if (INCLUDE__UBINOS__BSP == 1)
 
