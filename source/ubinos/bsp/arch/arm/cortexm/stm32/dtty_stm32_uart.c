@@ -55,9 +55,10 @@ uint8_t _g_dtty_uart_need_reset = 0;
 uint8_t _g_dtty_uart_need_rx_restart = 0;
 uint8_t _g_dtty_uart_need_tx_restart = 0;
 
-static void dtty_stm32_uart_reset(void);
+static void _dtty_stm32_uart_reset(void);
+static int _dtty_getc_advan(char *ch_p, int blocked);
 
-static void dtty_stm32_uart_reset(void)
+static void _dtty_stm32_uart_reset(void)
 {
     HAL_StatusTypeDef stm_err;
 
@@ -227,7 +228,7 @@ int dtty_init(void)
         _g_dtty_uart_tx_overflow_count = 0;
         _g_dtty_uart_need_reset = 1;
 
-        dtty_stm32_uart_reset();
+        _dtty_stm32_uart_reset();
 
         _g_dtty_uart_reset_count = 0;
 
@@ -272,7 +273,7 @@ int dtty_geterror(void)
     return 0;
 }
 
-int dtty_getc(char *ch_p)
+static int _dtty_getc_advan(char *ch_p, int blocked)
 {
     int r;
     ubi_err_t ubi_err;
@@ -280,9 +281,26 @@ int dtty_getc(char *ch_p)
     uint16_t len;
 
     r = -1;
-    if (!bsp_isintr())
+    do
     {
-        mutex_lock(_g_dtty_uart_getlock);
+        if (bsp_isintr())
+        {
+            break;
+        }
+
+        if (!blocked)
+        {
+            r = mutex_lock_timed(_g_dtty_uart_getlock, 0);
+        }
+        else
+        {
+            r = mutex_lock(_g_dtty_uart_getlock);
+        }
+        if (r != 0)
+        {
+            break;
+        }
+
         do
         {
             if (!_g_bsp_dtty_init)
@@ -298,7 +316,7 @@ int dtty_getc(char *ch_p)
             {
                 if (_g_dtty_uart_need_reset)
                 {
-                    dtty_stm32_uart_reset();
+                    _dtty_stm32_uart_reset();
                 }
 
                 if (_g_dtty_uart_need_rx_restart)
@@ -316,23 +334,41 @@ int dtty_getc(char *ch_p)
                 ubi_err = cbuf_read(_g_dtty_uart_rbuf, (uint8_t*) ch_p, 1, NULL);
                 if (ubi_err == UBI_ERR_OK)
                 {
+                    r = 0;
+                    break;
+                }
+
+                if (!blocked)
+                {
                     break;
                 }
 
                 sem_take_timedms(_g_dtty_uart_rsem, DTTY_UART_CHECK_INTERVAL_MS);
             }
 
-            if (0 != _g_bsp_dtty_echo)
+            if (0 == r && 0 != _g_bsp_dtty_echo)
             {
                 dtty_putc(*ch_p);
             }
 
-            r = 0;
-        } while (0);
+            break;
+        } while (1);
+
         mutex_unlock(_g_dtty_uart_getlock);
-    }
+        break;
+    } while (1);
 
     return r;
+}
+
+int dtty_getc(char *ch_p)
+{
+    return _dtty_getc_advan(ch_p, 1);
+}
+
+int dtty_getc_unblocked(char *ch_p)
+{
+    return _dtty_getc_advan(ch_p, 0);
 }
 
 int dtty_putc(int ch)
@@ -360,7 +396,7 @@ int dtty_putc(int ch)
 
             if (_g_dtty_uart_need_reset)
             {
-                dtty_stm32_uart_reset();
+                _dtty_stm32_uart_reset();
             }
 
             if (0 != _g_bsp_dtty_autocr && '\n' == ch)
@@ -422,7 +458,7 @@ int dtty_flush(void)
         {
             if (_g_dtty_uart_need_reset)
             {
-                dtty_stm32_uart_reset();
+                _dtty_stm32_uart_reset();
             }
 
             if (_g_dtty_uart_need_tx_restart && cbuf_get_len(_g_dtty_uart_wbuf) > 0)
