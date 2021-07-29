@@ -61,6 +61,7 @@ static int _dtty_getc_advan(char *ch_p, int blocked);
 static void _dtty_stm32_uart_reset(void)
 {
     HAL_StatusTypeDef stm_err;
+    (void) stm_err;
 
     mutex_lock(_g_dtty_uart_resetlock);
 
@@ -207,6 +208,7 @@ int dtty_init(void)
     int r;
     uint8_t * buf;
     uint16_t len;
+    (void) r;
 
     if (!_g_bsp_dtty_init && !bsp_isintr() && _bsp_kernel_active)
     {
