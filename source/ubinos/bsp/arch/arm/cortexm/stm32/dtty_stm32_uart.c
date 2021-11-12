@@ -33,13 +33,10 @@ extern int _g_bsp_dtty_in_init;
 extern int _g_bsp_dtty_echo;
 extern int _g_bsp_dtty_autocr;
 
-#define DTTY_UART_READ_BUFFER_SIZE (512)
-#define DTTY_UART_WRITE_BUFFER_SIZE (1024 * 10)
-
 #define DTTY_UART_CHECK_INTERVAL_MS 1000
 
-cbuf_def_init(_g_dtty_uart_rbuf, DTTY_UART_READ_BUFFER_SIZE);
-cbuf_def_init(_g_dtty_uart_wbuf, DTTY_UART_WRITE_BUFFER_SIZE);
+cbuf_def_init(_g_dtty_uart_rbuf, STM32CUBEF2__DTTY_STM32_UART_READ_BUFFER_SIZE);
+cbuf_def_init(_g_dtty_uart_wbuf, STM32CUBEF2__DTTY_STM32_UART_WRITE_BUFFER_SIZE);
 
 sem_pt _g_dtty_uart_rsem = NULL;
 sem_pt _g_dtty_uart_wsem = NULL;
