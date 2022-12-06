@@ -150,8 +150,8 @@ static ubi_err_t _ubidrv_uart_init(int fd)
         r = mutex_create(&file->get_lock);
         ubi_assert(r == 0);
 
-        file->echo = 1;
-        file->autocr = 1;
+        file->echo = 0;
+        file->autocr = 0;
 
         file->rx_overflow_count = 0;
         file->tx_overflow_count = 0;
