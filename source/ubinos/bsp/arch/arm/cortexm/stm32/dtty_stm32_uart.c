@@ -608,6 +608,10 @@ int dtty_kbhit(void)
     return r;
 }
 
+void dtty_write_process(void *arg)
+{
+}
+
 #endif /* (STM32CUBEF2__DTTY_STM32_UART_ENABLE == 1) */
 
 #endif /* (UBINOS__BSP__DTTY_TYPE == UBINOS__BSP__DTTY_TYPE__EXTERNAL) */
