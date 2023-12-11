@@ -21,6 +21,10 @@
 
 #include "main.h"
 
+#define UBIDEV_UART_IO_OPTION__NONE    0x0000
+#define UBIDEV_UART_IO_OPTION__TIMED   0x0001
+#define UBIDEV_UART_IO_OPTION__BLOCKED 0x0002
+
 #define UBIDRV_UART_FILE_NUM            1
 #define UBIDRV_UART_CHECK_INTERVAL_MS   1000
 #define UBIDRV_UART_READ_BUFFER_SIZE    (512)
@@ -51,12 +55,12 @@ typedef struct _ubidrv_uart_file_t
     cbuf_pt write_cbuf;
 
     sem_pt read_sem;
-    sem_pt write_sem;  
-    
+    sem_pt write_sem;
+
     mutex_pt put_lock;
     mutex_pt get_lock;
     mutex_pt reset_lock;
-    
+
     unsigned int  rx_overflow_count;
     unsigned int  tx_overflow_count;
     unsigned int  reset_count;
@@ -70,7 +74,7 @@ UART_HandleTypeDef _g_ubidrv_uart_uart1_handle[UBIDRV_UART_FILE_NUM];
 
 static void _ubidrv_uart_reset(int fd);
 static ubi_err_t _ubidrv_uart_init(int fd);
-static ubi_err_t _ubidrv_uart_getc_advan(int fd, char *ch_p, int blocked);
+static ubi_err_t _ubidrv_uart_getc_advan(int fd, char *ch_p, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms);
 
 static void _ubidrv_uart_reset(int fd)
 {
@@ -182,12 +186,13 @@ static ubi_err_t _ubidrv_uart_init(int fd)
     return ubi_err;
 }
 
-static ubi_err_t _ubidrv_uart_getc_advan(int fd, char *ch_p, int blocked)
+static ubi_err_t _ubidrv_uart_getc_advan(int fd, char *ch_p, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms)
 {
     int r;
     ubi_err_t ubi_err;
     uint8_t * buf;
     uint16_t len;
+    uint32_t _remain_timeoutms = timeoutms;
 
     ubi_assert(0 < fd && fd <= UBIDRV_UART_FILE_NUM);
     ubidrv_uart_file_t * file = &_g_ubidrv_uart_files[fd - 1];
@@ -213,14 +218,23 @@ static ubi_err_t _ubidrv_uart_getc_advan(int fd, char *ch_p, int blocked)
             break;
         }
 
-        if (!blocked)
+        switch (io_option)
         {
-            r = mutex_lock_timed(file->get_lock, 0);
-        }
-        else
-        {
+        case UBIDEV_UART_IO_OPTION__NONE:
+            r = mutex_lock_timedms(file->get_lock, 0);
+            break;
+        case UBIDEV_UART_IO_OPTION__TIMED:
+            r = mutex_lock_timedms(file->get_lock, timeoutms);
+            if (NULL != remain_timeoutms)
+            {
+                *remain_timeoutms = task_getremainingtimeoutms();
+            }
+            break;
+        case UBIDEV_UART_IO_OPTION__BLOCKED:
             r = mutex_lock(file->get_lock);
+            break;
         }
+
         if (r != 0)
         {
             ubi_err = UBI_ERR_BUSY;
@@ -253,14 +267,33 @@ static ubi_err_t _ubidrv_uart_getc_advan(int fd, char *ch_p, int blocked)
             }
             else
             {
-                if (!blocked)
+                switch (io_option)
                 {
+                case UBIDEV_UART_IO_OPTION__NONE:
                     ubi_err = UBI_ERR_BUF_EMPTY;
                     break;
-                }
-                else
-                {
+                case UBIDEV_UART_IO_OPTION__TIMED:
+                    if (_remain_timeoutms <= 0)
+                    {
+                        ubi_err = UBI_ERR_TIMEOUT;
+                        break;
+                    }
+                    sem_take_timedms(file->read_sem, min(_remain_timeoutms, UBIDRV_UART_CHECK_INTERVAL_MS));
+                    _remain_timeoutms = task_getremainingtimeoutms();
+                    if (NULL != remain_timeoutms)
+                    {
+                        *remain_timeoutms = _remain_timeoutms;
+                    }
+                    ubi_err = UBI_ERR_OK;
+                    break;
+                case UBIDEV_UART_IO_OPTION__BLOCKED:
                     sem_take_timedms(file->read_sem, UBIDRV_UART_CHECK_INTERVAL_MS);
+                    ubi_err = UBI_ERR_OK;
+                    break;
+                }
+                if (ubi_err != UBI_ERR_OK)
+                {
+                    break;
                 }
             }
         }
@@ -490,12 +523,17 @@ ubi_err_t ubidrv_uart_close(ubidrv_uart_t * uart)
 
 ubi_err_t ubidrv_uart_getc(int fd, char *ch_p)
 {
-    return _ubidrv_uart_getc_advan(fd, ch_p, 1);
+    return _ubidrv_uart_getc_advan(fd, ch_p, UBIDEV_UART_IO_OPTION__BLOCKED, 0, NULL);
 }
 
 ubi_err_t ubidrv_uart_getc_unblocked(int fd, char *ch_p)
 {
-    return _ubidrv_uart_getc_advan(fd, ch_p, 0);
+    return _ubidrv_uart_getc_advan(fd, ch_p, UBIDEV_UART_IO_OPTION__NONE, 0, NULL);
+}
+
+ubi_err_t ubidrv_uart_getc_timedms(int fd, char *ch_p, uint32_t timeoutms, uint32_t *remain_timeoutms)
+{
+    return _ubidrv_uart_getc_advan(fd, ch_p, UBIDEV_UART_IO_OPTION__TIMED, timeoutms, remain_timeoutms);
 }
 
 ubi_err_t ubidrv_uart_putc(int fd, int ch)
@@ -652,7 +690,7 @@ ubi_err_t ubidrv_uart_flush(int fd)
 
         break;
     } while (1);
- 
+
     return ubi_err;
 }
 
