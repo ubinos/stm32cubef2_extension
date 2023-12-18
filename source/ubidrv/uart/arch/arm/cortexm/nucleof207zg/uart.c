@@ -26,6 +26,7 @@
 static const char * _g_ubidrv_uart_file_names[UBIDRV_UART_FILE_NUM] =
 {
     "/dev/tty1",
+    "/dev/tty2",
 };
 
 static USART_TypeDef * _g_ubidrv_uart_file_instance[UBIDRV_UART_FILE_NUM] =
@@ -35,7 +36,7 @@ static USART_TypeDef * _g_ubidrv_uart_file_instance[UBIDRV_UART_FILE_NUM] =
 
 ubidrv_uart_file_t _g_ubidrv_uart_files[UBIDRV_UART_FILE_NUM];
 
-UART_HandleTypeDef _g_ubidrv_uart_uart1_handle[UBIDRV_UART_FILE_NUM];
+UART_HandleTypeDef _g_ubidrv_uart_handle[UBIDRV_UART_FILE_NUM];
 
 static void _ubidrv_uart_reset(int fd);
 static ubi_st_t _ubidrv_uart_init(int fd);
@@ -408,7 +409,7 @@ ubi_st_t ubidrv_uart_open(ubidrv_uart_t * uart)
             if (0 == strncmp(_g_ubidrv_uart_file_names[i], uart->file_name, UBIDRV_UART_FILE_NAME_MAX))
             {
                 file = &_g_ubidrv_uart_files[i];
-                file->hal_uart = &_g_ubidrv_uart_uart1_handle[i];
+                file->hal_uart = &_g_ubidrv_uart_handle[i];
                 uart->fd = i + 1;
                 break;
             }

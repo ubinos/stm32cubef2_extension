@@ -172,6 +172,12 @@ static ubi_st_t ubidrv_uart_io_write_advan(int fd, uint8_t *buffer, uint32_t len
             assert(r == 0);
         }
 
+        if (cbuf_get_len(uart_file->write_cbuf) == 0)
+        {
+            sem_clear(uart_file->write_sem);
+            uart_file->need_tx_restart = 1;
+        }
+
         written_tmp = 0;
 
         ubi_err = cbuf_write(uart_file->write_cbuf, buffer, length, &written_tmp);
