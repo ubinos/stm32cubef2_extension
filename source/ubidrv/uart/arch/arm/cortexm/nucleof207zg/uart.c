@@ -32,11 +32,12 @@ static const char * _g_ubidrv_uart_file_names[UBIDRV_UART_FILE_NUM] =
 static USART_TypeDef * _g_ubidrv_uart_file_instance[UBIDRV_UART_FILE_NUM] =
 {
     UBIDRV_UART_UART1,
+    UBIDRV_UART_UART2,
 };
 
-ubidrv_uart_file_t _g_ubidrv_uart_files[UBIDRV_UART_FILE_NUM];
-
 UART_HandleTypeDef _g_ubidrv_uart_handle[UBIDRV_UART_FILE_NUM];
+
+ubidrv_uart_file_t _g_ubidrv_uart_files[UBIDRV_UART_FILE_NUM];
 
 static void _ubidrv_uart_reset(int fd);
 static ubi_st_t _ubidrv_uart_init(int fd);
