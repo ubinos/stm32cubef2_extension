@@ -26,14 +26,14 @@
 
 #define UBIDRV_UART_IO_OPTION__TIMED 0x0001
 
-static ubi_err_t ubidrv_uart_io_read_advan(int fd, uint8_t *buffer, uint32_t length, uint32_t *read, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms);
-static ubi_err_t ubidrv_uart_io_write_advan(int fd, uint8_t *buffer, uint32_t length, uint32_t *written, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms);
-static ubi_err_t ubidrv_uart_io_read_buf_clear_advan(int fd, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms);
-static ubi_err_t ubidrv_uart_io_flush_advan(int fd, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms);
+static ubi_st_t ubidrv_uart_io_read_advan(int fd, uint8_t *buffer, uint32_t length, uint32_t *read, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms);
+static ubi_st_t ubidrv_uart_io_write_advan(int fd, uint8_t *buffer, uint32_t length, uint32_t *written, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms);
+static ubi_st_t ubidrv_uart_io_read_buf_clear_advan(int fd, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms);
+static ubi_st_t ubidrv_uart_io_flush_advan(int fd, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms);
 
-static ubi_err_t ubidrv_uart_io_read_advan(int fd, uint8_t *buffer, uint32_t length, uint32_t *read, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms)
+static ubi_st_t ubidrv_uart_io_read_advan(int fd, uint8_t *buffer, uint32_t length, uint32_t *read, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms)
 {
-    ubi_err_t ubi_err;
+    ubi_st_t ubi_err;
     int r;
     uint8_t * buf;
     uint32_t read_tmp;
@@ -54,7 +54,7 @@ static ubi_err_t ubidrv_uart_io_read_advan(int fd, uint8_t *buffer, uint32_t len
             timeoutms = task_getremainingtimeoutms();
             if (r == UBIK_ERR__TIMEOUT)
             {
-                ubi_err = UBI_ERR_TIMEOUT;
+                ubi_err = UBI_ST_TIMEOUT;
                 break;
             }
             assert(r == 0);
@@ -81,12 +81,12 @@ static ubi_err_t ubidrv_uart_io_read_advan(int fd, uint8_t *buffer, uint32_t len
             }
 
             ubi_err = cbuf_read(uart_file->read_cbuf, &buffer[read_tmp], length - read_tmp, &read_tmp2);
-            assert(ubi_err == UBI_ERR_OK || ubi_err == UBI_ERR_BUF_EMPTY);
+            assert(ubi_err == UBI_ST_OK || ubi_err == UBI_ST_ERR_BUF_EMPTY);
             read_tmp += read_tmp2;
 
             if (read_tmp >= length)
             {
-                ubi_err = UBI_ERR_OK;
+                ubi_err = UBI_ST_OK;
                 break;
             }
             else
@@ -95,14 +95,14 @@ static ubi_err_t ubidrv_uart_io_read_advan(int fd, uint8_t *buffer, uint32_t len
                 {
                     if (timeoutms == 0)
                     {
-                        ubi_err = UBI_ERR_TIMEOUT;
+                        ubi_err = UBI_ST_TIMEOUT;
                         break;
                     }
                     r = sem_take_timedms(uart_file->read_sem, timeoutms);
                     timeoutms = task_getremainingtimeoutms();
                     if (r == UBIK_ERR__TIMEOUT)
                     {
-                        ubi_err = UBI_ERR_TIMEOUT;
+                        ubi_err = UBI_ST_TIMEOUT;
                         break;
                     }
                     assert(r == 0);
@@ -135,9 +135,9 @@ static ubi_err_t ubidrv_uart_io_read_advan(int fd, uint8_t *buffer, uint32_t len
     return ubi_err;
 }
 
-static ubi_err_t ubidrv_uart_io_write_advan(int fd, uint8_t *buffer, uint32_t length, uint32_t *written, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms)
+static ubi_st_t ubidrv_uart_io_write_advan(int fd, uint8_t *buffer, uint32_t length, uint32_t *written, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms)
 {
-    ubi_err_t ubi_err;
+    ubi_st_t ubi_err;
     int r;
     uint8_t *buf;
     uint32_t written_tmp;
@@ -151,7 +151,7 @@ static ubi_err_t ubidrv_uart_io_write_advan(int fd, uint8_t *buffer, uint32_t le
     {
         if (length <= 0)
         {
-            ubi_err = UBI_ERR_OK;
+            ubi_err = UBI_ST_OK;
             break;
         }
 
@@ -161,7 +161,7 @@ static ubi_err_t ubidrv_uart_io_write_advan(int fd, uint8_t *buffer, uint32_t le
             timeoutms = task_getremainingtimeoutms();
             if (r == UBIK_ERR__TIMEOUT)
             {
-                ubi_err = UBI_ERR_TIMEOUT;
+                ubi_err = UBI_ST_TIMEOUT;
                 break;
             }
             assert(r == 0);
@@ -172,10 +172,16 @@ static ubi_err_t ubidrv_uart_io_write_advan(int fd, uint8_t *buffer, uint32_t le
             assert(r == 0);
         }
 
+        if (cbuf_get_len(uart_file->write_cbuf) == 0)
+        {
+            sem_clear(uart_file->write_sem);
+            uart_file->need_tx_restart = 1;
+        }
+
         written_tmp = 0;
 
         ubi_err = cbuf_write(uart_file->write_cbuf, buffer, length, &written_tmp);
-        assert(ubi_err == UBI_ERR_OK || ubi_err == UBI_ERR_BUF_FULL);
+        assert(ubi_err == UBI_ST_OK || ubi_err == UBI_ST_ERR_BUF_FULL);
         if (written_tmp == 0)
         {
             uart_file->tx_overflow_count++;
@@ -195,7 +201,7 @@ static ubi_err_t ubidrv_uart_io_write_advan(int fd, uint8_t *buffer, uint32_t le
                     if (i >= 99)
                     {
                         uart_file->need_tx_restart = 1;
-                        ubi_err = UBI_ERR_IO;
+                        ubi_err = UBI_ST_ERR_IO;
                         break;
                     }
                 }
@@ -222,9 +228,9 @@ static ubi_err_t ubidrv_uart_io_write_advan(int fd, uint8_t *buffer, uint32_t le
     return ubi_err;
 }
 
-static ubi_err_t ubidrv_uart_io_read_buf_clear_advan(int fd, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms)
+static ubi_st_t ubidrv_uart_io_read_buf_clear_advan(int fd, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms)
 {
-    ubi_err_t ubi_err;
+    ubi_st_t ubi_err;
     int r;
     (void) r;
     (void) ubi_err;
@@ -241,7 +247,7 @@ static ubi_err_t ubidrv_uart_io_read_buf_clear_advan(int fd, uint16_t io_option,
             timeoutms = task_getremainingtimeoutms();
             if (r == UBIK_ERR__TIMEOUT)
             {
-                ubi_err = UBI_ERR_TIMEOUT;
+                ubi_err = UBI_ST_TIMEOUT;
                 break;
             }
             assert(r == 0);
@@ -253,7 +259,7 @@ static ubi_err_t ubidrv_uart_io_read_buf_clear_advan(int fd, uint16_t io_option,
         }
 
         ubi_err = cbuf_clear(uart_file->read_cbuf);
-        assert(ubi_err == UBI_ERR_OK);
+        assert(ubi_err == UBI_ST_OK);
 
         if ((io_option & UBIDRV_UART_IO_OPTION__TIMED) != 0)
         {
@@ -270,9 +276,9 @@ static ubi_err_t ubidrv_uart_io_read_buf_clear_advan(int fd, uint16_t io_option,
     return ubi_err;
 }
 
-static ubi_err_t ubidrv_uart_io_flush_advan(int fd, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms)
+static ubi_st_t ubidrv_uart_io_flush_advan(int fd, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms)
 {
-    ubi_err_t ubi_err;
+    ubi_st_t ubi_err;
     int r;
     (void) r;
     (void) ubi_err;
@@ -283,7 +289,7 @@ static ubi_err_t ubidrv_uart_io_flush_advan(int fd, uint16_t io_option, uint32_t
 
     do
     {
-        ubi_err = UBI_ERR_OK;
+        ubi_err = UBI_ST_OK;
 
         if ((io_option & UBIDRV_UART_IO_OPTION__TIMED) != 0)
         {
@@ -291,7 +297,7 @@ static ubi_err_t ubidrv_uart_io_flush_advan(int fd, uint16_t io_option, uint32_t
             timeoutms = task_getremainingtimeoutms();
             if (r == UBIK_ERR__TIMEOUT)
             {
-                ubi_err = UBI_ERR_TIMEOUT;
+                ubi_err = UBI_ST_TIMEOUT;
                 break;
             }
             assert(r == 0);
@@ -312,7 +318,7 @@ static ubi_err_t ubidrv_uart_io_flush_advan(int fd, uint16_t io_option, uint32_t
             timeoutms = task_getremainingtimeoutms();
             if (r == UBIK_ERR__TIMEOUT)
             {
-                ubi_err = UBI_ERR_TIMEOUT;
+                ubi_err = UBI_ST_TIMEOUT;
                 break;
             }
         }
@@ -332,42 +338,42 @@ static ubi_err_t ubidrv_uart_io_flush_advan(int fd, uint16_t io_option, uint32_t
     return ubi_err;
 }
 
-ubi_err_t ubidrv_uart_io_read(int fd, uint8_t *buffer, uint32_t length, uint32_t *read)
+ubi_st_t ubidrv_uart_io_read(int fd, uint8_t *buffer, uint32_t length, uint32_t *read)
 {
     return ubidrv_uart_io_read_advan(fd, buffer, length, read, 0, 0, NULL);
 }
 
-ubi_err_t ubidrv_uart_io_read_timedms(int fd, uint8_t *buffer, uint32_t length, uint32_t *read, uint32_t timeoutms, uint32_t *remain_timeoutms)
+ubi_st_t ubidrv_uart_io_read_timedms(int fd, uint8_t *buffer, uint32_t length, uint32_t *read, uint32_t timeoutms, uint32_t *remain_timeoutms)
 {
     return ubidrv_uart_io_read_advan(fd, buffer, length, read, UBIDRV_UART_IO_OPTION__TIMED, timeoutms, remain_timeoutms);
 }
 
-ubi_err_t ubidrv_uart_io_write(int fd, uint8_t *buffer, uint32_t length, uint32_t *written)
+ubi_st_t ubidrv_uart_io_write(int fd, uint8_t *buffer, uint32_t length, uint32_t *written)
 {
     return ubidrv_uart_io_write_advan(fd, buffer, length, written, 0, 0, NULL);
 }
 
-ubi_err_t ubidrv_uart_io_write_timedms(int fd, uint8_t *buffer, uint32_t length, uint32_t *written, uint32_t timeoutms, uint32_t *remain_timeoutms)
+ubi_st_t ubidrv_uart_io_write_timedms(int fd, uint8_t *buffer, uint32_t length, uint32_t *written, uint32_t timeoutms, uint32_t *remain_timeoutms)
 {
     return ubidrv_uart_io_write_advan(fd, buffer, length, written, UBIDRV_UART_IO_OPTION__TIMED, timeoutms, remain_timeoutms);
 }
 
-ubi_err_t ubidrv_uart_io_read_buf_clear(int fd)
+ubi_st_t ubidrv_uart_io_read_buf_clear(int fd)
 {
     return ubidrv_uart_io_read_buf_clear_advan(fd, 0, 0, NULL);
 }
 
-ubi_err_t ubidrv_uart_io_read_buf_clear_timedms(int fd, uint32_t timeoutms, uint32_t *remain_timeoutms)
+ubi_st_t ubidrv_uart_io_read_buf_clear_timedms(int fd, uint32_t timeoutms, uint32_t *remain_timeoutms)
 {
     return ubidrv_uart_io_read_buf_clear_advan(fd, UBIDRV_UART_IO_OPTION__TIMED, timeoutms, remain_timeoutms);
 }
 
-ubi_err_t ubidrv_uart_io_flush(int fd)
+ubi_st_t ubidrv_uart_io_flush(int fd)
 {
     return ubidrv_uart_io_flush_advan(fd, 0, 0, NULL);
 }
 
-ubi_err_t ubidrv_uart_io_flush_timedms(int fd, uint32_t timeoutms, uint32_t *remain_timeoutms)
+ubi_st_t ubidrv_uart_io_flush_timedms(int fd, uint32_t timeoutms, uint32_t *remain_timeoutms)
 {
     return ubidrv_uart_io_flush_advan(fd, UBIDRV_UART_IO_OPTION__TIMED, timeoutms, remain_timeoutms);
 }

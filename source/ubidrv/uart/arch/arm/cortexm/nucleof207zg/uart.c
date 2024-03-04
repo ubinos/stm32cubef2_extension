@@ -26,20 +26,22 @@
 static const char * _g_ubidrv_uart_file_names[UBIDRV_UART_FILE_NUM] =
 {
     "/dev/tty1",
+    "/dev/tty2",
 };
 
 static USART_TypeDef * _g_ubidrv_uart_file_instance[UBIDRV_UART_FILE_NUM] =
 {
     UBIDRV_UART_UART1,
+    UBIDRV_UART_UART2,
 };
+
+UART_HandleTypeDef _g_ubidrv_uart_handle[UBIDRV_UART_FILE_NUM];
 
 ubidrv_uart_file_t _g_ubidrv_uart_files[UBIDRV_UART_FILE_NUM];
 
-UART_HandleTypeDef _g_ubidrv_uart_uart1_handle[UBIDRV_UART_FILE_NUM];
-
 static void _ubidrv_uart_reset(int fd);
-static ubi_err_t _ubidrv_uart_init(int fd);
-static ubi_err_t _ubidrv_uart_getc_advan(int fd, char *ch_p, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms);
+static ubi_st_t _ubidrv_uart_init(int fd);
+static ubi_st_t _ubidrv_uart_getc_advan(int fd, char *ch_p, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms);
 
 static void _ubidrv_uart_reset(int fd)
 {
@@ -72,10 +74,10 @@ static void _ubidrv_uart_reset(int fd)
     mutex_unlock(file->reset_lock);
 }
 
-static ubi_err_t _ubidrv_uart_init(int fd)
+static ubi_st_t _ubidrv_uart_init(int fd)
 {
     int r;
-    ubi_err_t ubi_err;
+    ubi_st_t ubi_err;
     uint8_t * buf;
     uint16_t len;
 
@@ -86,19 +88,19 @@ static ubi_err_t _ubidrv_uart_init(int fd)
     {
         if (bsp_isintr() || 0 != _bsp_critcount)
         {
-            ubi_err = UBI_ERR_INVALID_STATE;
+            ubi_err = UBI_ST_ERR_INVALID_STATE;
             break;
         }
 
         if (!_bsp_kernel_active)
         {
-            ubi_err = UBI_ERR_INVALID_STATE;
+            ubi_err = UBI_ST_ERR_INVALID_STATE;
             break;
         }
 
         if (file->init || file->in_init)
         {
-            ubi_err = UBI_ERR_INVALID_STATE;
+            ubi_err = UBI_ST_ERR_INVALID_STATE;
             break;
         }
 
@@ -144,17 +146,17 @@ static ubi_err_t _ubidrv_uart_init(int fd)
 
         file->in_init = 0;
 
-        ubi_err = UBI_ERR_OK;
+        ubi_err = UBI_ST_OK;
         break;
     } while (1);
 
     return ubi_err;
 }
 
-static ubi_err_t _ubidrv_uart_getc_advan(int fd, char *ch_p, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms)
+static ubi_st_t _ubidrv_uart_getc_advan(int fd, char *ch_p, uint16_t io_option, uint32_t timeoutms, uint32_t *remain_timeoutms)
 {
     int r;
-    ubi_err_t ubi_err;
+    ubi_st_t ubi_err;
     uint8_t * buf;
     uint16_t len;
     uint32_t _remain_timeoutms = timeoutms;
@@ -167,19 +169,19 @@ static ubi_err_t _ubidrv_uart_getc_advan(int fd, char *ch_p, uint16_t io_option,
     {
         if (bsp_isintr() || 0 != _bsp_critcount)
         {
-            ubi_err = UBI_ERR_INVALID_STATE;
+            ubi_err = UBI_ST_ERR_INVALID_STATE;
             break;
         }
 
         if (!_bsp_kernel_active)
         {
-            ubi_err = UBI_ERR_INVALID_STATE;
+            ubi_err = UBI_ST_ERR_INVALID_STATE;
             break;
         }
 
         if (!file->init)
         {
-            ubi_err = UBI_ERR_INIT;
+            ubi_err = UBI_ST_ERR_INIT;
             break;
         }
 
@@ -202,7 +204,7 @@ static ubi_err_t _ubidrv_uart_getc_advan(int fd, char *ch_p, uint16_t io_option,
 
         if (r != 0)
         {
-            ubi_err = UBI_ERR_BUSY;
+            ubi_err = UBI_ST_BUSY;
             break;
         }
 
@@ -226,7 +228,7 @@ static ubi_err_t _ubidrv_uart_getc_advan(int fd, char *ch_p, uint16_t io_option,
             }
 
             ubi_err = cbuf_read(file->read_cbuf, (uint8_t*) ch_p, 1, NULL);
-            if (ubi_err == UBI_ERR_OK)
+            if (ubi_err == UBI_ST_OK)
             {
                 break;
             }
@@ -235,12 +237,12 @@ static ubi_err_t _ubidrv_uart_getc_advan(int fd, char *ch_p, uint16_t io_option,
                 switch (io_option)
                 {
                 case UBIDEV_UART_IO_OPTION__NONE:
-                    ubi_err = UBI_ERR_BUF_EMPTY;
+                    ubi_err = UBI_ST_ERR_BUF_EMPTY;
                     break;
                 case UBIDEV_UART_IO_OPTION__TIMED:
                     if (_remain_timeoutms <= 0)
                     {
-                        ubi_err = UBI_ERR_TIMEOUT;
+                        ubi_err = UBI_ST_TIMEOUT;
                         break;
                     }
                     sem_take_timedms(file->read_sem, min(_remain_timeoutms, UBIDRV_UART_CHECK_INTERVAL_MS));
@@ -249,14 +251,14 @@ static ubi_err_t _ubidrv_uart_getc_advan(int fd, char *ch_p, uint16_t io_option,
                     {
                         *remain_timeoutms = _remain_timeoutms;
                     }
-                    ubi_err = UBI_ERR_OK;
+                    ubi_err = UBI_ST_OK;
                     break;
                 case UBIDEV_UART_IO_OPTION__BLOCKED:
                     sem_take_timedms(file->read_sem, UBIDRV_UART_CHECK_INTERVAL_MS);
-                    ubi_err = UBI_ERR_OK;
+                    ubi_err = UBI_ST_OK;
                     break;
                 }
-                if (ubi_err != UBI_ERR_OK)
+                if (ubi_err != UBI_ST_OK)
                 {
                     break;
                 }
@@ -394,9 +396,9 @@ void ubidrv_uart_err_callback(int fd)
 }
 
 
-ubi_err_t ubidrv_uart_open(ubidrv_uart_t * uart)
+ubi_st_t ubidrv_uart_open(ubidrv_uart_t * uart)
 {
-    ubi_err_t ubi_err;
+    ubi_st_t ubi_err;
     ubidrv_uart_file_t * file = NULL;
 
     ubi_assert(uart != NULL);
@@ -408,14 +410,14 @@ ubi_err_t ubidrv_uart_open(ubidrv_uart_t * uart)
             if (0 == strncmp(_g_ubidrv_uart_file_names[i], uart->file_name, UBIDRV_UART_FILE_NAME_MAX))
             {
                 file = &_g_ubidrv_uart_files[i];
-                file->hal_uart = &_g_ubidrv_uart_uart1_handle[i];
+                file->hal_uart = &_g_ubidrv_uart_handle[i];
                 uart->fd = i + 1;
                 break;
             }
         }
         if (file == NULL)
         {
-            ubi_err = UBI_ERR_NOT_FOUND;
+            ubi_err = UBI_ST_ERR_NOT_FOUND;
             break;
         }
 
@@ -481,29 +483,29 @@ ubi_err_t ubidrv_uart_open(ubidrv_uart_t * uart)
     return ubi_err;
 }
 
-ubi_err_t ubidrv_uart_close(ubidrv_uart_t * uart)
+ubi_st_t ubidrv_uart_close(ubidrv_uart_t * uart)
 {
-    return UBI_ERR_NOT_SUPPORTED;
+    return UBI_ST_ERR_NOT_SUPPORTED;
 }
 
-ubi_err_t ubidrv_uart_getc(int fd, char *ch_p)
+ubi_st_t ubidrv_uart_getc(int fd, char *ch_p)
 {
     return _ubidrv_uart_getc_advan(fd, ch_p, UBIDEV_UART_IO_OPTION__BLOCKED, 0, NULL);
 }
 
-ubi_err_t ubidrv_uart_getc_unblocked(int fd, char *ch_p)
+ubi_st_t ubidrv_uart_getc_unblocked(int fd, char *ch_p)
 {
     return _ubidrv_uart_getc_advan(fd, ch_p, UBIDEV_UART_IO_OPTION__NONE, 0, NULL);
 }
 
-ubi_err_t ubidrv_uart_getc_timedms(int fd, char *ch_p, uint32_t timeoutms, uint32_t *remain_timeoutms)
+ubi_st_t ubidrv_uart_getc_timedms(int fd, char *ch_p, uint32_t timeoutms, uint32_t *remain_timeoutms)
 {
     return _ubidrv_uart_getc_advan(fd, ch_p, UBIDEV_UART_IO_OPTION__TIMED, timeoutms, remain_timeoutms);
 }
 
-ubi_err_t ubidrv_uart_putc(int fd, int ch)
+ubi_st_t ubidrv_uart_putc(int fd, int ch)
 {
-    ubi_err_t ubi_err;
+    ubi_st_t ubi_err;
     uint8_t * buf;
     uint16_t len;
     uint32_t written;
@@ -517,19 +519,19 @@ ubi_err_t ubidrv_uart_putc(int fd, int ch)
     {
         if (bsp_isintr() || 0 != _bsp_critcount)
         {
-            ubi_err = UBI_ERR_INVALID_STATE;
+            ubi_err = UBI_ST_ERR_INVALID_STATE;
             break;
         }
 
         if (!_bsp_kernel_active)
         {
-            ubi_err = UBI_ERR_INVALID_STATE;
+            ubi_err = UBI_ST_ERR_INVALID_STATE;
             break;
         }
 
         if (!file->init)
         {
-            ubi_err = UBI_ERR_INIT;
+            ubi_err = UBI_ST_ERR_INIT;
             break;
         }
 
@@ -578,7 +580,7 @@ ubi_err_t ubidrv_uart_putc(int fd, int ch)
                 }
             }
 
-            ubi_err = UBI_ERR_OK;
+            ubi_err = UBI_ST_OK;
             break;
         } while (1);
 
@@ -590,9 +592,9 @@ ubi_err_t ubidrv_uart_putc(int fd, int ch)
     return ubi_err;
 }
 
-ubi_err_t ubidrv_uart_flush(int fd)
+ubi_st_t ubidrv_uart_flush(int fd)
 {
-    ubi_err_t ubi_err;
+    ubi_st_t ubi_err;
     uint8_t * buf;
     uint16_t len;
 
@@ -604,19 +606,19 @@ ubi_err_t ubidrv_uart_flush(int fd)
     {
         if (bsp_isintr() || 0 != _bsp_critcount)
         {
-            ubi_err = UBI_ERR_INVALID_STATE;
+            ubi_err = UBI_ST_ERR_INVALID_STATE;
             break;
         }
 
         if (!_bsp_kernel_active)
         {
-            ubi_err = UBI_ERR_INVALID_STATE;
+            ubi_err = UBI_ST_ERR_INVALID_STATE;
             break;
         }
 
         if (!file->init)
         {
-            ubi_err = UBI_ERR_INIT;
+            ubi_err = UBI_ST_ERR_INIT;
             break;
         }
 
@@ -637,14 +639,14 @@ ubi_err_t ubidrv_uart_flush(int fd)
                 if (HAL_UART_Transmit_IT(file->hal_uart, buf, len) != HAL_OK)
                 {
                     file->need_tx_restart = 1;
-                    ubi_err = UBI_ERR_BUSY;
+                    ubi_err = UBI_ST_BUSY;
                     break;
                 }
             }
 
             if (cbuf_get_len(file->write_cbuf) == 0)
             {
-                ubi_err = UBI_ERR_OK;
+                ubi_err = UBI_ST_OK;
                 break;
             }
 
@@ -754,7 +756,7 @@ int ubidrv_uart_kbhit(int fd)
 int ubidrv_uart_puts(int fd, const char *str, int max)
 {
     int i;
-    ubi_err_t ubi_err;
+    ubi_st_t ubi_err;
 
     if (NULL == str)
     {
@@ -773,7 +775,7 @@ int ubidrv_uart_puts(int fd, const char *str, int max)
             break;
         }
         ubi_err = ubidrv_uart_putc(fd, *str);
-        if (ubi_err != UBI_ERR_OK)
+        if (ubi_err != UBI_ST_OK)
         {
             break;
         }
@@ -786,7 +788,7 @@ int ubidrv_uart_puts(int fd, const char *str, int max)
 int ubidrv_uart_gets(int fd, char *str, int max)
 {
     int i;
-    ubi_err_t ubi_err;
+    ubi_st_t ubi_err;
 
     ubi_assert(0 < fd && fd <= UBIDRV_UART_FILE_NUM);
     ubidrv_uart_file_t * file = &_g_ubidrv_uart_files[fd - 1];
@@ -805,7 +807,7 @@ int ubidrv_uart_gets(int fd, char *str, int max)
     for (i = 0; i < max; i++)
     {
         ubi_err = ubidrv_uart_getc(fd, &str[i]);
-        if (UBI_ERR_OK != ubi_err || '\0' == str[i] || '\n' == str[i] || '\r' == str[i])
+        if (UBI_ST_OK != ubi_err || '\0' == str[i] || '\n' == str[i] || '\r' == str[i])
         {
             break;
         }
@@ -819,7 +821,7 @@ int ubidrv_uart_gets(int fd, char *str, int max)
     return i;
 }
 
-ubi_err_t ubidrv_uart_setecho(int fd, int echo)
+ubi_st_t ubidrv_uart_setecho(int fd, int echo)
 {
     ubi_assert(0 < fd && fd <= UBIDRV_UART_FILE_NUM);
     ubidrv_uart_file_t * file = &_g_ubidrv_uart_files[fd - 1];
@@ -827,7 +829,7 @@ ubi_err_t ubidrv_uart_setecho(int fd, int echo)
 
     file->echo = echo;
 
-    return UBI_ERR_OK;
+    return UBI_ST_OK;
 }
 
 int ubidrv_uart_getecho(int fd)
@@ -839,7 +841,7 @@ int ubidrv_uart_getecho(int fd)
     return file->echo;
 }
 
-ubi_err_t ubidrv_uart_setautocr(int fd, int autocr)
+ubi_st_t ubidrv_uart_setautocr(int fd, int autocr)
 {
     ubi_assert(0 < fd && fd <= UBIDRV_UART_FILE_NUM);
     ubidrv_uart_file_t * file = &_g_ubidrv_uart_files[fd - 1];
@@ -847,7 +849,7 @@ ubi_err_t ubidrv_uart_setautocr(int fd, int autocr)
 
     file->autocr = autocr;
 
-    return UBI_ERR_OK;
+    return UBI_ST_OK;
 }
 
 int ubidrv_uart_getautocr(int fd)
